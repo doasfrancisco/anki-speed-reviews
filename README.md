@@ -1,5 +1,7 @@
 # **Auto Answer Timer (Adaptive & Gamified)**
 
+Anki addon: https://ankiweb.net/shared/info/1111809971
+
 This add-on automatically reveals the answer after a set time, forcing you to think faster. It features an **adaptive timer** that learns your speed for each card and turns your reviews into a game where you try to beat your own records.
 
 Perfect for **speed-reviewing**, **blitz sessions**, or **hands-free studying**.
