@@ -1,6 +1,7 @@
 meta.json
 *.ankiaddon
 timers.json
+z.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
