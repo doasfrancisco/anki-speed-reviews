@@ -1,7 +1,6 @@
 from typing import Optional, Dict
 import json
 import os
-import copy
 
 from anki.cards import Card
 from aqt import mw, gui_hooks
@@ -48,6 +47,57 @@ def _save_timers() -> None:
 
 _load_timers()
 
+def _hide_top_right_text() -> None:
+    if mw.reviewer is None or mw.reviewer.web is None:
+        return
+
+    js = """
+    (function() {
+        let el = document.getElementById('auto-answer-overlay');
+        if (el) {
+            el.style.display = 'none';
+        }
+    })();
+    """
+
+    mw.reviewer.web.eval(js)
+
+def _show_top_right_text(text: str) -> None:
+    if mw.reviewer is None or mw.reviewer.web is None:
+        return
+
+    safe_text = (
+        text.replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "<br>")
+    )
+
+    js = f"""
+    (function() {{
+        var id = 'auto-answer-overlay';
+        var el = document.getElementById(id);
+        if (!el) {{
+            el = document.createElement('div');
+            el.id = id;
+            el.style.position = 'fixed';
+            el.style.top = '25px';
+            el.style.right = '20px';
+            el.style.zIndex = '9999';
+            el.style.background = 'rgba(0, 0, 0, 0.7)';
+            el.style.padding = '5px 10px';
+            el.style.borderRadius = '5px';
+            el.style.color = 'white';
+            el.style.fontSize = '16px';
+            el.style.fontFamily = 'sans-serif';
+            el.style.pointerEvents = 'none';
+            document.body.appendChild(el);
+        }}
+        el.innerHTML = '{safe_text}';
+        el.style.display = 'block';
+        el.style.opacity = '1';
+    }})();
+    """
+    mw.reviewer.web.eval(js)
 
 def _cancel_timer() -> None:
     """Stop and dispose of any existing timer."""
@@ -73,7 +123,7 @@ def _get_card_info(card_id: int) -> dict:
 
 
 def _on_show_question(card: Card) -> None:
-    global _timer, _elapsed_timer, _current_card_id
+    global _timer, _elapsed_timer, _current_card_id, _show_timer
 
     _cancel_timer()
 
@@ -84,6 +134,8 @@ def _on_show_question(card: Card) -> None:
     if mw.reviewer.state != "question":
         print("Not in question state, skipping")
         return
+
+    _hide_top_right_text()
 
     _current_card_id = card.id
     card_timer = _get_card_info(_current_card_id).get("timer", 0)
@@ -100,6 +152,7 @@ def _on_show_question(card: Card) -> None:
     print(f"Auto answer will be shown in {card_timer} seconds")
 
     def on_timeout() -> None:
+        global _show_timer
         print("Auto answer timer fired")
         # Only act if:
         #  - reviewer still exists
@@ -111,6 +164,7 @@ def _on_show_question(card: Card) -> None:
             and mw.reviewer.card.id == _current_card_id
             and mw.reviewer.state == "question"
         ):
+            _show_timer = card_timer
             mw.reviewer.onEnterKey()  # simulate pressing space/enter
 
     _timer.timeout.connect(on_timeout)
@@ -126,8 +180,14 @@ def _on_show_answer(card: Card) -> None:
         print("Auto answer is disabled")
         return
 
-    _show_timer = _elapsed_timer.elapsed()
-    print(f"How long it took to show the answer: {_show_timer / 1000} seconds")
+    if not _show_timer:
+        _show_timer = _elapsed_timer.elapsed()
+    card_timer = _get_card_info(_current_card_id).get("timer", 0)
+
+    message = f"Answer correctly to set \n{_show_timer / 1000} seconds as new record.\nIf you're wrong, just try again."
+    if card_timer > 0:
+        message = f"{_show_timer / 1000}s / {card_timer / 1000}s "
+    _show_top_right_text(message)
 
 def _on_answer_card(reviewer, card: Card, ease) -> None:
     global _timers, _show_timer
@@ -142,7 +202,7 @@ def _on_answer_card(reviewer, card: Card, ease) -> None:
         if ease > 1:
             card_timer = _show_timer
             print("First timer for card set")
-    elif _show_timer < card_timer and ease > 1:
+    elif _show_timer + 200 < card_timer and ease > 1:
         card_timer = _show_timer
         streak = 0
         wrong_counter = 0
@@ -162,6 +222,7 @@ def _on_answer_card(reviewer, card: Card, ease) -> None:
 
     _timers[str(_current_card_id)] = {"timer": card_timer, "streak": streak, "wrong_counter": wrong_counter}
     _save_timers()
+    _show_timer = None
 
 def _on_state_change(new_state, old_state) -> None:
     if old_state == "review":
